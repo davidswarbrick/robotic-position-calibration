@@ -46,21 +46,63 @@ void logTagPosition(
   int64 endTime
 );
 
-
+//   RelativeChilitags();
+ // ~RelativeChilitags ();
 class RelativeChilitags {
 private:
-  chilitags::TagCornerMap &tags;
+  chilitags::TagCornerMap tags;
   // Set x and y calibration from 0 - 1 - 2
   // static const float CALIBRATION_X = 1.0f;
   // static const float CALIBRATION_Y = 1.0f;
 
 public:
-  RelativeChilitags();
+  RelativeChilitags ();
   void updateCornerMap(chilitags::TagCornerMap &newTags);
   cv::Point2f averagePos(cv::Mat_<cv::Point2f> tagCorners);
   cv::Point2f relPos (std::pair <int, chilitags::Quad> tag);
-  virtual ~RelativeChilitags ();
 };
+
+RelativeChilitags::RelativeChilitags () {
+  // cv::Matx<float, 4, 2> q(0.0, 0.0,0.0, 0.0,0.0, 0.0, 0.0, 0.0);
+  // chilitags::TagCornerMap m({0,q});
+  // tags = m;
+
+  // Initialize private tag variable
+  chilitags::Quad q(0.0, 0.0,0.0, 0.0,0.0, 0.0, 0.0, 0.0);
+  std::map<int, chilitags::Quad> tags = {
+    std::pair<int, chilitags::Quad> (0,q),
+  };
+}
+
+void RelativeChilitags::updateCornerMap(chilitags::TagCornerMap &newTags){
+  if (newTags.size() >= tags.size()) {
+    tags = newTags;
+    std::cout<<"Updating tags \n";
+  }
+};
+
+cv::Point2f RelativeChilitags::averagePos(cv::Mat_<cv::Point2f> tagCorners){
+  cv::Point2f result = cv::Point2f(0.0, 0.0);
+  for (int i = 0; i < 4; ++i){
+      result += tagCorners(i) * 0.25;
+  }
+  return result;
+}
+
+cv::Point2f RelativeChilitags::relPos(std::pair <int, chilitags::Quad> tag){
+  if (tag.first != 0 && tag.first != 1 && tag.first !=2) {
+    const cv::Mat_<cv::Point2f> corners(tag.second);
+    // Calculate the relative position from 0,0, using tags
+    // ToDo - use the Calibrated x and y values, and 1 and 2 locations to define distances
+    // ToDo implement this as a matrix transformation
+    // ToDo implement orientation calculation also
+    return cv::Point2f(1.0, 1.0);
+  } else {
+    // Cannot have a relative position from one of the relative tags
+    return cv::Point2f(0.0, 0.0);
+  }
+}
+
 
 int main(int argc, char* argv[])
 {
@@ -132,32 +174,6 @@ int main(int argc, char* argv[])
     return 0;
 }
 
-
-void RelativeChilitags::updateCornerMap(chilitags::TagCornerMap &newTags){
-  tags = newTags;
-};
-
-cv::Point2f RelativeChilitags::averagePos(cv::Mat_<cv::Point2f> tagCorners){
-  cv::Point2f result = cv::Point2f(0.0, 0.0);
-  for (int i = 0; i < 4; ++i){
-      result += tagCorners(i) * 0.25;
-  }
-  return result;
-}
-
-cv::Point2f RelativeChilitags::relPos(std::pair <int, chilitags::Quad> tag){
-  if (tag.first != 0 && tag.first != 1 && tag.first !=2) {
-    const cv::Mat_<cv::Point2f> corners(tag.second);
-    // Calculate the relative position from 0,0, using tags
-    // ToDo - use the Calibrated x and y values, and 1 and 2 locations to define distances
-    // ToDo implement this as a matrix transformation
-    // ToDo implement orientation calculation also
-    return cv::Point2f(1.0, 1.0);
-  } else {
-    // Cannot have a relative position from one of the relative tags
-    return cv::Point2f(0.0, 0.0);
-  }
-}
 
 
 
