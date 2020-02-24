@@ -30,7 +30,9 @@
 
 #include <iostream>
 
-// Not much interesting here, move along
+static const float CALIBRATION_X = 1.0f;
+static const float CALIBRATION_Y = 1.0f;
+
 void drawTags(
     cv::Mat outputImage,
     const chilitags::TagCornerMap &tags,
@@ -51,18 +53,25 @@ void logTagPosition(
 class RelativeChilitags {
 private:
   chilitags::TagCornerMap tags;
+  float xConv;
+  float yConv;
+  float rotation;
+  int _xRes;
+  int _yRes;
+  bool mapUpdated = false;
   // Set x and y calibration from 0 - 1 - 2
-  // static const float CALIBRATION_X = 1.0f;
-  // static const float CALIBRATION_Y = 1.0f;
+
 
 public:
-  RelativeChilitags ();
+  RelativeChilitags (int xRes, int yRes);
   void updateCornerMap(chilitags::TagCornerMap &newTags);
-  cv::Point2f averagePos(cv::Mat_<cv::Point2f> tagCorners);
+  void calcCalibrationFactors(void);
+  cv::Point2f averagePos(chilitags::Quad tagRep);
   cv::Point2f relPos (std::pair <int, chilitags::Quad> tag);
+  void logNovelTagLocations(void);
 };
 
-RelativeChilitags::RelativeChilitags () {
+RelativeChilitags::RelativeChilitags (int xRes, int yRes) {
   // cv::Matx<float, 4, 2> q(0.0, 0.0,0.0, 0.0,0.0, 0.0, 0.0, 0.0);
   // chilitags::TagCornerMap m({0,q});
   // tags = m;
@@ -72,16 +81,59 @@ RelativeChilitags::RelativeChilitags () {
   std::map<int, chilitags::Quad> tags = {
     std::pair<int, chilitags::Quad> (0,q),
   };
-}
-
-void RelativeChilitags::updateCornerMap(chilitags::TagCornerMap &newTags){
-  if (newTags.size() >= tags.size()) {
-    tags = newTags;
-    std::cout<<"Updating tags \n";
-  }
+  _xRes = xRes;
+  _yRes = yRes;
+  xConv = 1.0f;
+  yConv = 1.0f;
+  rotation = 0.0f;
 };
 
-cv::Point2f RelativeChilitags::averagePos(cv::Mat_<cv::Point2f> tagCorners){
+void RelativeChilitags::updateCornerMap(chilitags::TagCornerMap &newTags){
+  if (newTags.size() >= 3 && tags.size() != 1) {
+    // If tags size = 1 then we have found no chilitgas - for our operation we want at least 4:
+    // 3 calibration tags (0,1,2) - these are checked to exist below
+    // and our fourth tag will be the one we are locating in reference to it.
+    std::map<int, chilitags::Quad>::iterator it;
+    bool referenceTagsFound = true;
+    // Check if tags 0,1,2 are in the image:
+    for (int i = 0; i < 3; i++) {
+      it = newTags.find(i);
+      if (it == newTags.end()) {
+        // std::cout<<"Did not find tag "<<i<<"\n";
+        referenceTagsFound = false;
+      };
+    };
+    if (referenceTagsFound) {
+      // If our reference/calibration tags exist, then update internal map and calibration values
+      tags = newTags;
+      calcCalibrationFactors();
+      mapUpdated = true;
+      // std::cout<<"Updating Found Tags \n";
+    }
+
+  } else {
+    mapUpdated = false;
+  }
+
+};
+
+void RelativeChilitags::calcCalibrationFactors(void){
+  // refactor this to find correct way of accessing first two variables.
+  // Tags are arranged as:
+  // 0 ---- 1
+  // |
+  // |
+  // 2
+  // ToDo needs to have sqrt implementation - probably provided by OpenCV library
+
+  float x_pixel_dist = cv::norm( averagePos(tags[1]) - averagePos(tags[0]));
+  float y_pixel_dist = cv::norm( averagePos(tags[2]) - averagePos(tags[0]));
+  xConv = (x_pixel_dist / _xRes) * CALIBRATION_X;
+  yConv = (y_pixel_dist / _yRes) * CALIBRATION_Y;
+};
+
+cv::Point2f RelativeChilitags::averagePos(chilitags::Quad tagRep){
+  cv::Mat_<cv::Point2f> tagCorners(tagRep);
   cv::Point2f result = cv::Point2f(0.0, 0.0);
   for (int i = 0; i < 4; ++i){
       result += tagCorners(i) * 0.25;
@@ -90,19 +142,38 @@ cv::Point2f RelativeChilitags::averagePos(cv::Mat_<cv::Point2f> tagCorners){
 }
 
 cv::Point2f RelativeChilitags::relPos(std::pair <int, chilitags::Quad> tag){
-  if (tag.first != 0 && tag.first != 1 && tag.first !=2) {
-    const cv::Mat_<cv::Point2f> corners(tag.second);
-    // Calculate the relative position from 0,0, using tags
-    // ToDo - use the Calibrated x and y values, and 1 and 2 locations to define distances
-    // ToDo implement this as a matrix transformation
-    // ToDo implement orientation calculation also
-    return cv::Point2f(1.0, 1.0);
-  } else {
-    // Cannot have a relative position from one of the relative tags
-    return cv::Point2f(0.0, 0.0);
-  }
+  // ToDo : we want to return difference from 0 tag, multiplied by conversion factors
+  // (tag.second - tags[0]) * cv::Mat({xConv, yConv})
+  // ToDo : implement rotation calculation.
+  float x = ( averagePos(tag.second).x - averagePos(tags[0]).x ) * xConv;
+  float y = ( averagePos(tag.second).y - averagePos(tags[0]).y ) * yConv;
+  return cv::Point2f(x,y);
+  // No longer need to catch 1, 0 or 2 locations as these should be stored in the tag map, conversions
+  // if (tag.first != 0 && tag.first != 1 && tag.first !=2) {
+  //   const cv::Mat_<cv::Point2f> corners(tag.second);
+  //   // Calculate the relative position from 0,0, using tags
+  //   // ToDo - use the Calibrated x and y values, and 1 and 2 locations to define distances
+  //   // ToDo implement this as a matrix transformation
+  //   // ToDo implement orientation calculation also
+  //   return cv::Point2f(1.0, 1.0);// Not much interesting here, move along
+  // } else {
+  //   // Cannot have a relative position from one of the relative tags
+  //   return cv::Point2f(0.0, 0.0);
+  // }
 }
 
+void RelativeChilitags::logNovelTagLocations(void){
+  if (tags.size() > 3 && mapUpdated){
+    // If less than 3 tags, cannot log as no novel tags found
+    std::map<int, chilitags::Quad>::iterator it=tags.begin();
+    std::advance(it,3);
+    // Since iterator has advanced, now only looping through other tags:
+    for (; it!=tags.end(); ++it) {
+      std::cout<<"Tag "<<it->first<<" Position: "<<relPos(*it)<<"    ";
+    }
+    std::cout<<"\n";
+  }
+}
 
 int main(int argc, char* argv[])
 {
@@ -138,7 +209,7 @@ int main(int argc, char* argv[])
     // We need separate Chilitags if we want to compare find() with different
     // detection/tracking parameters on the same image
 
-    RelativeChilitags r;
+    RelativeChilitags r(xRes, yRes);
     // This one is the reference Chilitags
     chilitags::Chilitags detectedChilitags;
     detectedChilitags.setFilter(0, 0.0f);
@@ -162,6 +233,7 @@ int main(int argc, char* argv[])
         auto tags = detectedChilitags.find(inputImage);
         int64 endTime = cv::getTickCount();
         r.updateCornerMap(tags);
+        r.logNovelTagLocations();
         // drawTags(outputImage, tags, startTime, endTime, true);
         logTagPosition(outputImage, tags, startTime, endTime);
 
@@ -189,11 +261,11 @@ void logTagPosition(
     for (const auto & tag : tags) {
 
         const cv::Mat_<cv::Point2f> corners(tag.second);
-        std::cout<<"Tag: "<< tag.first <<"\n";
+        // std::cout<<"Tag: "<< tag.first <<"\n";
         for (size_t i = 0; i < 4; ++i) {
             static const int SHIFT = 16;
             static const float PRECISION = 1<<SHIFT;
-            std::cout<< corners(i)<<"\n";
+            // std::cout<< corners(i)<<"\n";
             cv::line(
                 outputImage,
                 PRECISION*corners(i),
