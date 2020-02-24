@@ -29,6 +29,8 @@
 #include <opencv2/highgui/highgui.hpp>
 
 #include <iostream>
+// #include <time.h>
+#include <boost/date_time/posix_time/posix_time.hpp>
 
 static const float CALIBRATION_X = 1.0f;
 static const float CALIBRATION_Y = 1.0f;
@@ -169,9 +171,20 @@ void RelativeChilitags::logNovelTagLocations(void){
     std::advance(it,3);
     // Since iterator has advanced, now only looping through other tags:
     for (; it!=tags.end(); ++it) {
-      std::cout<<"Tag "<<it->first<<" Position: "<<relPos(*it)<<"    ";
+      // time_t rawtime;
+      // struct tm *ptm;
+      // time (&rawtime);
+      // ptm = gmtime( &rawtime );
+      // std::cout<<asctime(ptm)<<" Tag "<<it->first<<" Position: "<<relPos(*it)<<"\n";
+
+      using namespace boost::posix_time;
+      ptime t = microsec_clock::universal_time();
+      std::cout << to_iso_extended_string(t)<<"Z,"<<it->first<<","<<relPos(*it).x<<","<<relPos(*it).y<<",\n";
+      // boost::posix_time::ptime t = boost::posix_time::microsec_clock::universal_time();
+      // std::cout << boost::posix_time::to_iso_extended_string(t) << "Z\n";
+      // std::cout<<ptm->tm_hour<<":"<<ptm->tm_min<<"Tag "<<it->first<<" Position: "<<relPos(*it)<<"    ";
     }
-    std::cout<<"\n";
+    // std::cout<<"\n";
   }
 }
 
