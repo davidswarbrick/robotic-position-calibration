@@ -29,7 +29,7 @@
 #include <opencv2/highgui/highgui.hpp>
 
 #include <iostream>
-// #include <time.h>
+#include <fstream>
 #include <boost/date_time/posix_time/posix_time.hpp>
 
 static const float CALIBRATION_X = 1.0f;
@@ -61,11 +61,13 @@ private:
   int _xRes;
   int _yRes;
   bool mapUpdated = false;
+  std::ofstream logFile;
   // Set x and y calibration from 0 - 1 - 2
 
 
 public:
   RelativeChilitags (int xRes, int yRes);
+  ~RelativeChilitags(void);
   void updateCornerMap(chilitags::TagCornerMap &newTags);
   void calcCalibrationFactors(void);
   cv::Point2f averagePos(chilitags::Quad tagRep);
@@ -88,7 +90,26 @@ RelativeChilitags::RelativeChilitags (int xRes, int yRes) {
   xConv = 1.0f;
   yConv = 1.0f;
   rotation = 0.0f;
+
+  // Set up logging file, noting that Turtlebot logging uses this format for naming:
+  // "Turtlebot_position_log-{}-{}-{}-{}:{}.csv".format(
+  // dt.year, dt.month, dt.day, dt.hour, dt.minute
+  // char logFileNameBuffer [50];
+  // int cx ;
+
+
+  boost::posix_time::ptime t = boost::posix_time::microsec_clock::universal_time();
+  // cx = snprintf(logFileNameBuffer,50,"Webcam_position_log-%d.csv",boost::posix_time::to_iso_extended_string(t));
+  // logFile.open("Webcam_position_log.csv");
+
+  logFile.open("Webcam_position_log-"+boost::posix_time::to_iso_extended_string(t)+".csv");
+  logFile<<"Timestamp,TagID,x(m),y(m),\n";
 };
+
+RelativeChilitags::~RelativeChilitags(void){
+  logFile.close();
+};
+
 
 void RelativeChilitags::updateCornerMap(chilitags::TagCornerMap &newTags){
   if (newTags.size() >= 3 && tags.size() != 1) {
@@ -177,9 +198,9 @@ void RelativeChilitags::logNovelTagLocations(void){
       // ptm = gmtime( &rawtime );
       // std::cout<<asctime(ptm)<<" Tag "<<it->first<<" Position: "<<relPos(*it)<<"\n";
 
-      using namespace boost::posix_time;
-      ptime t = microsec_clock::universal_time();
-      std::cout << to_iso_extended_string(t)<<"Z,"<<it->first<<","<<relPos(*it).x<<","<<relPos(*it).y<<",\n";
+      // using namespace boost::posix_time;
+      boost::posix_time::ptime t = boost::posix_time::microsec_clock::universal_time();
+      logFile << boost::posix_time::to_iso_extended_string(t)<<"Z,"<<it->first<<","<<relPos(*it).x<<","<<relPos(*it).y<<",\n";
       // boost::posix_time::ptime t = boost::posix_time::microsec_clock::universal_time();
       // std::cout << boost::posix_time::to_iso_extended_string(t) << "Z\n";
       // std::cout<<ptm->tm_hour<<":"<<ptm->tm_min<<"Tag "<<it->first<<" Position: "<<relPos(*it)<<"    ";
