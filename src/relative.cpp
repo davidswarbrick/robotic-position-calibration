@@ -168,8 +168,13 @@ cv::Point2f RelativeChilitags::relPos(std::pair <int, chilitags::Quad> tag){
   // ToDo : we want to return difference from 0 tag, multiplied by conversion factors
   // (tag.second - tags[0]) * cv::Mat({xConv, yConv})
   // ToDo : implement rotation calculation.
-  float x = ( averagePos(tag.second).x - averagePos(tags[0]).x ) * xConv;
-  float y = ( averagePos(tag.second).y - averagePos(tags[0]).y ) * yConv;
+  // float x = ( averagePos(tag.second).x - averagePos(tags[0]).x ) * xConv;
+  // float y = ( averagePos(tag.second).y - averagePos(tags[0]).y ) * yConv;
+
+
+  // Calculating offsets
+  cv::Point2f offset = averagePos(tags[0]);
+
   return cv::Point2f(x,y);
   // No longer need to catch 1, 0 or 2 locations as these should be stored in the tag map, conversions
   // if (tag.first != 0 && tag.first != 1 && tag.first !=2) {
