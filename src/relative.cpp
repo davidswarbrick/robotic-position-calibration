@@ -31,6 +31,7 @@
 #include <iostream>
 #include <fstream>
 #include <boost/date_time/posix_time/posix_time.hpp>
+#include <cmath>
 
 static const float CALIBRATION_X = 1.0f;
 static const float CALIBRATION_Y = 1.0f;
@@ -174,8 +175,21 @@ cv::Point2f RelativeChilitags::relPos(std::pair <int, chilitags::Quad> tag){
 
   // Calculating offsets
   cv::Point2f offset = averagePos(tags[0]);
+  // Rotate in these coordinate axes
+  cv::Mat R_x = ( cv::Mat_<float>(2,2)<<
+                  cos(rotation), sin(rotation),
+                  -sin(rotation), cos(rotation)
+                );
+  cv::Mat R_xInv;
+  cv::invert(R_x,R_xInv);
 
-  return cv::Point2f(x,y);
+  cv::Mat tag_after_offset = cv::Mat(averagePos(tag.second) - offset,false);
+  cv::Mat res;
+  cv::transform(tag_after_offset, res, R_xInv);
+  return cv::Point(res);
+  // return R_xInv*(averagePos(tag.second) - offset);
+
+  // return cv::Point2f(x,y);
   // No longer need to catch 1, 0 or 2 locations as these should be stored in the tag map, conversions
   // if (tag.first != 0 && tag.first != 1 && tag.first !=2) {
   //   const cv::Mat_<cv::Point2f> corners(tag.second);

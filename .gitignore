@@ -2,3 +2,6 @@
 Makefile
 CMakeFiles/
 CMakeCache.txt
+*.csv
+relative
+*.png
