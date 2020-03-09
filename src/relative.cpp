@@ -47,22 +47,20 @@ private:
   float xConv;
   float yConv;
   float rotation;
-  // int _xRes;
-  // int _yRes;
   bool mapUpdated = false;
   std::ofstream logFile;
-  // Set x and y calibration from 0 - 1 - 2
-
 
 public:
   RelativeChilitags (void);
   ~RelativeChilitags(void);
-  void updateCornerMap(chilitags::TagCornerMap &newTags);
-  void calcCalibrationFactors(void);
-  cv::Point2f averagePos(chilitags::Quad tagRep);
+  void        updateCornerMap(chilitags::TagCornerMap &newTags);
+  cv::Point2f centreOfTag(chilitags::Quad tagRep);
+  void        calcCalibrationFactors(void);
   cv::Point2f offsetAndRotate(cv::Point2f position);
-  cv::Point2f relPos (std::pair <int, chilitags::Quad> tag);
-  void logNovelTagLocations(void);
+  cv::Point2f scaleOffsetAndRotate(cv::Point2f position);
+  float       tagRelativeOrientation(chilitags::Quad tag);
+  cv::Point2f tagRelativePosition(chilitags::Quad tag);
+  void        logNovelTagLocations(void);
 };
 
 RelativeChilitags::RelativeChilitags () {
@@ -93,7 +91,7 @@ RelativeChilitags::RelativeChilitags () {
   // logFile.open("Webcam_position_log.csv");
 
   logFile.open("Webcam_position_log-"+boost::posix_time::to_iso_extended_string(t)+".csv");
-  logFile<<"Timestamp,TagID,x(m),y(m),\n";
+  logFile<<"Timestamp,TagID,x(m),y(m),theta(rad),\n";
 };
 
 RelativeChilitags::~RelativeChilitags(void){
@@ -138,24 +136,25 @@ void RelativeChilitags::calcCalibrationFactors(void){
   // |
   // 2
 
-
-  cv::Point2f diff1 = averagePos(tags[1]) - averagePos(tags[0]);
-  cv::Point2f diff2 = averagePos(tags[2]) - averagePos(tags[0]);
+  cv::Point2f diff1 = centreOfTag(tags[1]) - centreOfTag(tags[0]);
+  cv::Point2f diff2 = centreOfTag(tags[2]) - centreOfTag(tags[0]);
 
   // ToDo : average some values here to provide a better rotation estimate
-  rotation = atan2(diff1.y,diff1.x);
+  float r1 = atan2(diff1.y,diff1.x);
+  // float r2 = atan2(diff2.y,diff2.x) + M_PI/2;
+  rotation = r1;
 
-  cv::Point2f tag1 = offsetAndRotate(averagePos(tags[1]));
-  cv::Point2f tag2 = offsetAndRotate(averagePos(tags[2]));
+  cv::Point2f tag1 = offsetAndRotate(centreOfTag(tags[1]));
+  cv::Point2f tag2 = offsetAndRotate(centreOfTag(tags[2]));
 
   // Could use a norm here to include offsets due to incorrect rotation
   // float x_pixel_dist = cv::norm(tag1);
   // float y_pixel_dist = cv::norm(tag2);
-  xConv = CALIBRATION_X/tag1.x;
-  yConv = CALIBRATION_Y/tag2.y;
+  xConv = CALIBRATION_X/abs(tag1.x);
+  yConv = CALIBRATION_Y/abs(tag2.y);
 };
 
-cv::Point2f RelativeChilitags::averagePos(chilitags::Quad tagRep){
+cv::Point2f RelativeChilitags::centreOfTag(chilitags::Quad tagRep){
   cv::Mat_<cv::Point2f> tagCorners(tagRep);
   cv::Point2f result = cv::Point2f(0.0, 0.0);
   for (int i = 0; i < 4; ++i){
@@ -165,9 +164,31 @@ cv::Point2f RelativeChilitags::averagePos(chilitags::Quad tagRep){
 }
 
 
+float RelativeChilitags::tagRelativeOrientation(chilitags::Quad tag){
+  cv::Mat_<cv::Point2f> tagCorners(tag);
+  //  0 - 1
+  //  |   | ------> (this is the direction we require)
+  //  3 - 2
+  cv::Point2f top = offsetAndRotate(tagCorners(1)) - offsetAndRotate(tagCorners(0));
+  float top_angle = atan2(top.y,top.x);
+
+  cv::Point2f bottom = offsetAndRotate(tagCorners(2)) - offsetAndRotate(tagCorners(3));
+  float bottom_angle = atan2(bottom.y,bottom.x);
+
+
+  cv::Point2f left = offsetAndRotate(tagCorners(3)) - offsetAndRotate(tagCorners(0));
+  float left_angle = atan2(left.y,left.x) + M_PI/2;
+
+
+  cv::Point2f right = offsetAndRotate(tagCorners(2)) - offsetAndRotate(tagCorners(1));
+  float right_angle = atan2(right.y,right.x) + M_PI/2;
+
+  return (top_angle + bottom_angle + left_angle + right_angle)/4;
+}
+
 cv::Point2f RelativeChilitags::offsetAndRotate(cv::Point2f position){
   // Calculating pixel offset from the zero tag
-  cv::Point2f tag_minus_offset = position - averagePos(tags[0]);
+  cv::Point2f tag_minus_offset = position - centreOfTag(tags[0]);
   cv::Mat tag_matrix =(  cv::Mat_<float>(2,1)<< tag_minus_offset.x, tag_minus_offset.y);
 
   // Rotate from u,v to x,y
@@ -180,24 +201,17 @@ cv::Point2f RelativeChilitags::offsetAndRotate(cv::Point2f position){
   return result;
 }
 
-
-cv::Point2f RelativeChilitags::relPos(std::pair <int, chilitags::Quad> tag){
-  // ToDo : we want to return difference from 0 tag, multiplied by conversion factors
-  // (tag.second - tags[0]) * cv::Mat({xConv, yConv})
-  // ToDo : implement rotation calculation.
-  // float x = ( averagePos(tag.second).x - averagePos(tags[0]).x ) * xConv;
-  // float y = ( averagePos(tag.second).y - averagePos(tags[0]).y ) * yConv;
-
-  //   // Calculate the relative position from 0,0, using tags
-  //   // ToDo - use the Calibrated x and y values, and 1 and 2 locations to define distances
-  //   // ToDo implement this as a matrix transformation
-  //   // ToDo implement orientation calculation also
-  cv::Point2f relative = offsetAndRotate(averagePos(tag.second));
+cv::Point2f RelativeChilitags::scaleOffsetAndRotate(cv::Point2f position){
+  // Offset and rotate a tag from the u,v axes to x,y and scale by measured distances
+  cv::Point2f relative = offsetAndRotate(position);
   relative.x *= xConv;
   relative.y *= yConv;
   return relative;
+}
 
-
+cv::Point2f RelativeChilitags::tagRelativePosition(chilitags::Quad tag){
+  // Offset and rotate a tag from the u,v axes to x,y and scale by measured distances
+  return scaleOffsetAndRotate(centreOfTag(tag));
 }
 
 void RelativeChilitags::logNovelTagLocations(void){
@@ -205,6 +219,7 @@ void RelativeChilitags::logNovelTagLocations(void){
     // If less than 3 tags, cannot log as no novel tags found
     std::map<int, chilitags::Quad>::iterator it=tags.begin();
     cv::Point2f position;
+    float orientation;
     // Skip tags 0,1,2
     std::advance(it,3);
     // Since iterator has advanced, now only looping through other tags:
@@ -213,17 +228,18 @@ void RelativeChilitags::logNovelTagLocations(void){
       // struct tm *ptm;
       // time (&rawtime);
       // ptm = gmtime( &rawtime );
-      // std::cout<<asctime(ptm)<<" Tag "<<it->first<<" Position: "<<relPos(*it)<<"\n";
+      // std::cout<<asctime(ptm)<<" Tag "<<it->first<<" Position: "<<tagRelativePosition(*it)<<"\n";
 
       // using namespace boost::posix_time;
       boost::posix_time::ptime t = boost::posix_time::microsec_clock::universal_time();
-      // position = averagePos(it->second);
-      position = relPos(*it);
-      logFile << boost::posix_time::to_iso_extended_string(t)<<"Z,"<<it->first<<","<<position.x<<","<<position.y<<",\n";
-      // std::cout << boost::posix_time::to_iso_extended_string(t)<<"Z,"<<it->first<<","<<relPos(*it).x<<","<<relPos(*it).y<<",\n";
+      // position = centreOfTag(it->second);
+      position = tagRelativePosition(it->second);
+      orientation = tagRelativeOrientation(it->second);
+      logFile << boost::posix_time::to_iso_extended_string(t)<<"+00:00,"<<it->first<<","<<position.x<<","<<position.y<<","<<orientation<<",\n";
+      // std::cout << boost::posix_time::to_iso_extended_string(t)<<"Z,"<<it->first<<","<<tagRelativePosition(*it).x<<","<<tagRelativePosition(*it).y<<",\n";
       // boost::posix_time::ptime t = boost::posix_time::microsec_clock::universal_time();
       // std::cout << boost::posix_time::to_iso_extended_string(t) << "Z\n";
-      // std::cout<<ptm->tm_hour<<":"<<ptm->tm_min<<"Tag "<<it->first<<" Position: "<<relPos(*it)<<"    ";
+      // std::cout<<ptm->tm_hour<<":"<<ptm->tm_min<<"Tag "<<it->first<<" Position: "<<tagRelativePosition(*it)<<"    ";
     }
     // std::cout<<"\n";
   }
