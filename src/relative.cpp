@@ -3,7 +3,7 @@
 *   project: https://github.com/chili-epfl/chilitags                           *
 *   Copyright 2013-2014 EPFL                                                   *
 *   Copyright 2013-2014 Quentin Bonnard                                        *
-*   Additions made by David Swarbrick 2020                                     * 
+*   Additions made by David Swarbrick 2020                                     *
 *******************************************************************************/
 
 #include <chilitags.hpp>
@@ -47,24 +47,25 @@ private:
   float xConv;
   float yConv;
   float rotation;
-  int _xRes;
-  int _yRes;
+  // int _xRes;
+  // int _yRes;
   bool mapUpdated = false;
   std::ofstream logFile;
   // Set x and y calibration from 0 - 1 - 2
 
 
 public:
-  RelativeChilitags (int xRes, int yRes);
+  RelativeChilitags (void);
   ~RelativeChilitags(void);
   void updateCornerMap(chilitags::TagCornerMap &newTags);
   void calcCalibrationFactors(void);
   cv::Point2f averagePos(chilitags::Quad tagRep);
+  cv::Point2f offsetAndRotate(cv::Point2f position);
   cv::Point2f relPos (std::pair <int, chilitags::Quad> tag);
   void logNovelTagLocations(void);
 };
 
-RelativeChilitags::RelativeChilitags (int xRes, int yRes) {
+RelativeChilitags::RelativeChilitags () {
   // cv::Matx<float, 4, 2> q(0.0, 0.0,0.0, 0.0,0.0, 0.0, 0.0, 0.0);
   // chilitags::TagCornerMap m({0,q});
   // tags = m;
@@ -74,8 +75,8 @@ RelativeChilitags::RelativeChilitags (int xRes, int yRes) {
   std::map<int, chilitags::Quad> tags = {
     std::pair<int, chilitags::Quad> (0,q),
   };
-  _xRes = xRes;
-  _yRes = yRes;
+  // _xRes = xRes;
+  // _yRes = yRes;
   xConv = 1.0f;
   yConv = 1.0f;
   rotation = 0.0f;
@@ -136,12 +137,22 @@ void RelativeChilitags::calcCalibrationFactors(void){
   // |
   // |
   // 2
-  // ToDo needs to have sqrt implementation - probably provided by OpenCV library
 
-  float x_pixel_dist = cv::norm( averagePos(tags[1]) - averagePos(tags[0]));
-  float y_pixel_dist = cv::norm( averagePos(tags[2]) - averagePos(tags[0]));
-  xConv = (x_pixel_dist / _xRes) * CALIBRATION_X;
-  yConv = (y_pixel_dist / _yRes) * CALIBRATION_Y;
+
+  cv::Point2f diff1 = averagePos(tags[1]) - averagePos(tags[0]);
+  cv::Point2f diff2 = averagePos(tags[2]) - averagePos(tags[0]);
+
+  // ToDo : average some values here to provide a better rotation estimate
+  rotation = atan2(diff1.y,diff1.x);
+
+  cv::Point2f tag1 = offsetAndRotate(averagePos(tags[1]));
+  cv::Point2f tag2 = offsetAndRotate(averagePos(tags[2]));
+
+  // Could use a norm here to include offsets due to incorrect rotation
+  // float x_pixel_dist = cv::norm(tag1);
+  // float y_pixel_dist = cv::norm(tag2);
+  xConv = CALIBRATION_X/tag1.x;
+  yConv = CALIBRATION_Y/tag2.y;
 };
 
 cv::Point2f RelativeChilitags::averagePos(chilitags::Quad tagRep){
@@ -153,6 +164,23 @@ cv::Point2f RelativeChilitags::averagePos(chilitags::Quad tagRep){
   return result;
 }
 
+
+cv::Point2f RelativeChilitags::offsetAndRotate(cv::Point2f position){
+  // Calculating pixel offset from the zero tag
+  cv::Point2f tag_minus_offset = position - averagePos(tags[0]);
+  cv::Mat tag_matrix =(  cv::Mat_<float>(2,1)<< tag_minus_offset.x, tag_minus_offset.y);
+
+  // Rotate from u,v to x,y
+  cv::Mat R_x = ( cv::Mat_<float>(2,2)<<
+                  cos(rotation), -sin(rotation),
+                  -sin(rotation), -cos(rotation)
+                );
+  cv::Mat res = R_x * tag_matrix;
+  cv::Point2f result(res);
+  return result;
+}
+
+
 cv::Point2f RelativeChilitags::relPos(std::pair <int, chilitags::Quad> tag){
   // ToDo : we want to return difference from 0 tag, multiplied by conversion factors
   // (tag.second - tags[0]) * cv::Mat({xConv, yConv})
@@ -160,42 +188,24 @@ cv::Point2f RelativeChilitags::relPos(std::pair <int, chilitags::Quad> tag){
   // float x = ( averagePos(tag.second).x - averagePos(tags[0]).x ) * xConv;
   // float y = ( averagePos(tag.second).y - averagePos(tags[0]).y ) * yConv;
 
-
-  // Calculating offsets
-  cv::Point2f offset = averagePos(tags[0]);
-  // Rotate in these coordinate axes
-  cv::Mat R_x = ( cv::Mat_<float>(2,2)<<
-                  cos(rotation), sin(rotation),
-                  -sin(rotation), cos(rotation)
-                );
-  cv::Mat R_xInv;
-  cv::invert(R_x,R_xInv);
-
-  cv::Mat tag_after_offset = cv::Mat(averagePos(tag.second) - offset,false);
-  cv::Mat res;
-  cv::transform(tag_after_offset, res, R_xInv);
-  return cv::Point(res);
-  // return R_xInv*(averagePos(tag.second) - offset);
-
-  // return cv::Point2f(x,y);
-  // No longer need to catch 1, 0 or 2 locations as these should be stored in the tag map, conversions
-  // if (tag.first != 0 && tag.first != 1 && tag.first !=2) {
-  //   const cv::Mat_<cv::Point2f> corners(tag.second);
   //   // Calculate the relative position from 0,0, using tags
   //   // ToDo - use the Calibrated x and y values, and 1 and 2 locations to define distances
   //   // ToDo implement this as a matrix transformation
   //   // ToDo implement orientation calculation also
-  //   return cv::Point2f(1.0, 1.0);// Not much interesting here, move along
-  // } else {
-  //   // Cannot have a relative position from one of the relative tags
-  //   return cv::Point2f(0.0, 0.0);
-  // }
+  cv::Point2f relative = offsetAndRotate(averagePos(tag.second));
+  relative.x *= xConv;
+  relative.y *= yConv;
+  return relative;
+
+
 }
 
 void RelativeChilitags::logNovelTagLocations(void){
   if (tags.size() > 3 && mapUpdated){
     // If less than 3 tags, cannot log as no novel tags found
     std::map<int, chilitags::Quad>::iterator it=tags.begin();
+    cv::Point2f position;
+    // Skip tags 0,1,2
     std::advance(it,3);
     // Since iterator has advanced, now only looping through other tags:
     for (; it!=tags.end(); ++it) {
@@ -207,7 +217,10 @@ void RelativeChilitags::logNovelTagLocations(void){
 
       // using namespace boost::posix_time;
       boost::posix_time::ptime t = boost::posix_time::microsec_clock::universal_time();
-      logFile << boost::posix_time::to_iso_extended_string(t)<<"Z,"<<it->first<<","<<relPos(*it).x<<","<<relPos(*it).y<<",\n";
+      // position = averagePos(it->second);
+      position = relPos(*it);
+      logFile << boost::posix_time::to_iso_extended_string(t)<<"Z,"<<it->first<<","<<position.x<<","<<position.y<<",\n";
+      // std::cout << boost::posix_time::to_iso_extended_string(t)<<"Z,"<<it->first<<","<<relPos(*it).x<<","<<relPos(*it).y<<",\n";
       // boost::posix_time::ptime t = boost::posix_time::microsec_clock::universal_time();
       // std::cout << boost::posix_time::to_iso_extended_string(t) << "Z\n";
       // std::cout<<ptm->tm_hour<<":"<<ptm->tm_min<<"Tag "<<it->first<<" Position: "<<relPos(*it)<<"    ";
@@ -250,7 +263,7 @@ int main(int argc, char* argv[])
     // We need separate Chilitags if we want to compare find() with different
     // detection/tracking parameters on the same image
 
-    RelativeChilitags r(xRes, yRes);
+    RelativeChilitags r;
     // This one is the reference Chilitags
     chilitags::Chilitags detectedChilitags;
     detectedChilitags.setFilter(0, 0.0f);
