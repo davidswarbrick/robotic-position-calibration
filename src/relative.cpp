@@ -139,10 +139,10 @@ void RelativeChilitags::calcCalibrationFactors(void){
   cv::Point2f diff1 = centreOfTag(tags[1]) - centreOfTag(tags[0]);
   cv::Point2f diff2 = centreOfTag(tags[2]) - centreOfTag(tags[0]);
 
-  // ToDo : average some values here to provide a better rotation estimate
   float r1 = atan2(diff1.y,diff1.x);
-  // float r2 = atan2(diff2.y,diff2.x) + M_PI/2;
-  rotation = r1;
+  // The 0-2 line is viewed as positive y difference, so we subtract pi/2 to look for the orientation we want
+  float r2 = atan2(diff2.y,diff2.x) - M_PI/2;
+  rotation = (r1+ r2)/2;
 
   cv::Point2f tag1 = offsetAndRotate(centreOfTag(tags[1]));
   cv::Point2f tag2 = offsetAndRotate(centreOfTag(tags[2]));
