@@ -174,4 +174,76 @@ def reset(event):
 button.on_clicked(reset)
 
 
+def return_between_milliseconds(t1, t2):
+    """A function to return a data slice between two times measured from the start of test."""
+    if t1 > t2:
+        raise KeyError("Cannot get negative time slice.")
+    # Relative to first timestamp, t*1e6[ns] = t [ms]
+    time1 = df.index[0][1] + pd.Timedelta(t1 * 1e6)
+    time2 = df.index[0][1] + pd.Timedelta(t2 * 1e6)
+    if time1 > df.index[-1][1] or time2 > df.index[-1][1]:
+        raise KeyError("Requested time outside data range.")
+
+    # Look for the timestamp (index) at "time", if not use last value ->"pad"
+    r_i1 = df.loc["robot"].index.get_loc(time1, method="pad")
+    w_i1 = df.loc["webcam"].index.get_loc(time1, method="pad")
+
+    r_i2 = df.loc["robot"].index.get_loc(time2, method="pad")
+    w_i2 = df.loc["webcam"].index.get_loc(time2, method="pad")
+
+    # Return the latest data points
+    return df.loc["robot"].iloc[r_i1:r_i2], df.loc["webcam"].iloc[w_i1:w_i2]
+
+
+def plot_between_seconds(t1, t2):
+    r_t_slice, w_t_slice = return_between_milliseconds(t1 * 1e3, t2 * 1e3)
+    # print(r_t_slice["x(m)"])
+    # print(w_t_slice)
+    fig3, ax3 = plt.subplots()
+    ax3.plot(r_t_slice["x(m)"], r_t_slice["y(m)"], label="Robot", color="tab:blue")
+    ax3.plot(w_t_slice["x(m)"], w_t_slice["y(m)"], label="Webcam", color="tab:orange")
+    ax3.legend()
+    ax3.set_title("Subsection of Path Taken by the Robot")
+    ax3.set_xlabel("x(m)")
+    ax3.set_ylabel("y(m)")
+    ax3.set_aspect("equal", "box")
+
+    fig4, ax4 = plt.subplots()
+    ax4.plot(r_t_slice.index, r_t_slice["Theta(rad)"], label="Robot", color="tab:blue")
+    ax4.plot(
+        w_t_slice.index, w_t_slice["Theta(rad)"], label="Webcam", color="tab:orange"
+    )
+    plt.show()
+
+
+print(return_between_milliseconds(54e3, 84e3))
+r_t_slice, w_t_slice = return_between_milliseconds(54 * 1e3, 68 * 1e3)
+
+
+# Merge the two slices, recording the webcam measurement closest in time to each robot measurement.
+m = pd.merge_asof(
+    r_t_slice,
+    w_t_slice,
+    left_index=True,
+    right_index=True,
+    direction="nearest",
+    suffixes=["_r", "_w"],
+)
+# m.plot()
+# plt.title("Merged Data")
+m["e_x"] = m["x(m)_r"] - m["x(m)_w"]
+m["e_y"] = m["y(m)_r"] - m["y(m)_w"]
+m["e_t"] = m["Theta(rad)_r"] - m["Theta(rad)_w"]
+
+plt.plot(m["e_t"].index, np.mean(m["e_t"]) * np.ones(m["e_t"].shape), "-")
+
+
+def rotate_frame(points, theta):
+    """Rotate vector of points by Theta"""
+    if points.shape[1] != 2:
+        return ValueError("Need to supply a n x 2 matrix of points")
+    r = np.array([[np.cos(theta), -np.sin(theta)], [np.sin(theta), np.cos(theta)]])
+    return np.matmul(r, points.T).T
+
+
 plt.show()
