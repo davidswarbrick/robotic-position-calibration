@@ -91,7 +91,7 @@ RelativeChilitags::RelativeChilitags () {
   // logFile.open("Webcam_position_log.csv");
 
   logFile.open("Webcam_position_log-"+boost::posix_time::to_iso_extended_string(t)+".csv");
-  logFile<<"Timestamp,TagID,x(m),y(m),theta(rad),\n";
+  logFile<<"Timestamp,TagID,x(m),y(m),Theta(rad),\n";
 };
 
 RelativeChilitags::~RelativeChilitags(void){
