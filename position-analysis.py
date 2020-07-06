@@ -246,4 +246,103 @@ def rotate_frame(points, theta):
     return np.matmul(r, points.T).T
 
 
+mf = pd.merge_asof(
+    df.loc[("robot")],
+    df.loc[("webcam")],
+    left_index=True,
+    right_index=True,
+    direction="nearest",
+    suffixes=["_r", "_w"],
+    tolerance=pd.Timedelta("2ms"),
+)
+
+# Least Squares Matching
+
+q_i = mf[["x(m)_w", "y(m)_w"]].to_numpy()
+p_i = mf[["x(m)_r", "y(m)_r"]].to_numpy()
+
+# Convert to zero-centred
+x_i = p_i - np.mean(p_i, axis=0)
+y_i = q_i - np.mean(q_i, axis=0)
+
+# Calculate least-squares matrices
+S = np.matmul(x_i.T, y_i)
+u, s, vh = np.linalg.svd(S)
+vu_det = np.linalg.det(np.matmul(vh.T, u.T))
+diag = np.array([[1, 0], [0, vu_det]])
+
+# Use these to calculate rotation and translation
+R = np.matmul(vh.T, np.matmul(diag, u.T))
+t = np.mean(q_i, axis=0) - np.matmul(R, np.mean(p_i, axis=0))
+
+print("R:", R)
+print("t:", t)
+
+# Rotate & Translate the robot data accordingly
+out = np.matmul(R, p_i.T)
+
+out[0, :] = out[0, :] + t[0]
+out[1, :] = out[1, :] + t[1]
+
+mf["x(m)_r"] = out.T[:, 0]
+mf["y(m)_r"] = out.T[:, 1]
+
+# Plot webcam and altered robot data on a graph
+fig7, ax7 = plt.subplots()
+
+ax7.plot(q_i[:, 0], q_i[:, 1], label="Webcam", color="tab:orange")
+# plt.plot(p_i[:,0],p_i[:,1],label="Unaltered Robot")
+ax7.plot(out.T[:, 0], out.T[:, 1], label="Robot: Least Squares R + t", color="tab:blue")
+ax7.legend()
+ax7.set_title("Path Taken by the Robot")
+ax7.set_xlabel("x(m)")
+ax7.set_ylabel("y(m)")
+ax7.set_aspect("equal", "box")
 plt.show()
+
+
+mf["e_x"] = mf["x(m)_r"] - mf["x(m)_w"]
+mf["e_y"] = mf["y(m)_r"] - mf["y(m)_w"]
+mf["e_d"] = np.sqrt(mf["e_x"] ** 2 + mf["e_y"] ** 2)
+
+fig8, ax8 = plt.subplots()
+ax8.set_title("Path Taken by the Robot")
+ax8.set_xlabel("x(m)")
+ax8.set_ylabel("y(m)")
+ax8.set_aspect("equal", "box")
+
+bound = 0.05
+
+
+low_err = mf[mf["e_d"] < bound]
+high_err = mf[mf["e_d"] >= bound]
+
+
+ax8.plot(
+    low_err["x(m)_r"],
+    low_err["y(m)_r"],
+    label="Low Error",
+    color="tab:green",
+    linestyle="None",
+    marker=".",
+    markersize=0.8,
+)
+
+ax8.plot(
+    high_err["x(m)_r"],
+    high_err["y(m)_r"],
+    label="High Error",
+    color="tab:red",
+    linestyle="None",
+    marker=".",
+    markersize=0.8,
+)
+ax8.legend()
+plt.show()
+
+
+fig9, ax9 = plt.subplots()
+ax9.set_title("Error Histogram")
+ax9.set_xlabel("x(m)")
+ax9.set_ylabel("y(m)")
+ax9.set_aspect("equal", "box")
